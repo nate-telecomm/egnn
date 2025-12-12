@@ -1,4 +1,4 @@
-package main
+package egnn
 import (
 	"math/rand"
 	"fmt"
