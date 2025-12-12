@@ -1,4 +1,4 @@
-package main
+package egnn
 import (
 	"gonum.org/v1/gonum/mat"
 	"gonum.org/v1/gonum/floats"
