@@ -15,28 +15,28 @@ type NetConfig struct {
 }
 
 type NeuralNet struct {
-	config   NetConfig
-	wHidden  *mat.Dense
-	bHidden  *mat.Dense
-	wOut     *mat.Dense
-	bOut     *mat.Dense
+	Config   NetConfig
+	WHidden  *mat.Dense
+	BHidden  *mat.Dense
+	WOut     *mat.Dense
+	BOut     *mat.Dense
 }
 
 func NewNet(conf NetConfig) *NeuralNet {
-        nn := &NeuralNet{config: conf}
+        nn := &NeuralNet{Config: conf}
 
         randSource := rand.NewSource(time.Now().UnixNano())
         randGen := rand.New(randSource)
 
-        nn.wHidden = mat.NewDense(nn.config.InputNeurons, nn.config.HiddenNeurons, nil)
-        nn.bHidden = mat.NewDense(1, nn.config.HiddenNeurons, nil)
-        nn.wOut = mat.NewDense(nn.config.HiddenNeurons, nn.config.OutputNeurons, nil)
-        nn.bOut = mat.NewDense(1, nn.config.OutputNeurons, nil)
+        nn.WHidden = mat.NewDense(nn.Config.InputNeurons, nn.Config.HiddenNeurons, nil)
+        nn.BHidden = mat.NewDense(1, nn.Config.HiddenNeurons, nil)
+        nn.WOut = mat.NewDense(nn.Config.HiddenNeurons, nn.Config.OutputNeurons, nil)
+        nn.BOut = mat.NewDense(1, nn.Config.OutputNeurons, nil)
 
-        for _, param := range []*mat.Dense{nn.wHidden, nn.bHidden, nn.wOut, nn.bOut} {
+        for _, param := range []*mat.Dense{nn.WHidden, nn.BHidden, nn.WOut, nn.BOut} {
                 raw := param.RawMatrix().Data
                 for i := range raw {
-                        raw[i] = randGen.Float64() // Better practice is often: rand.Float64() * 2 - 1 for -1 to 1, or scaled by sqrt(2/n) for ReLU.
+                        raw[i] = randGen.Float64()
                 }
         }
         return nn
@@ -45,26 +45,28 @@ func NewNet(conf NetConfig) *NeuralNet {
 func (nn *NeuralNet) Train(x, y *mat.Dense) error {
         output := new(mat.Dense)
 
-        if err := nn.backpropagate(x, y, nn.wHidden, nn.bHidden, nn.wOut, nn.bOut, output); err != nil {
+        if err := nn.backpropagate(x, y, nn.WHidden, nn.BHidden, nn.WOut, nn.BOut, output); err != nil {
                 return err
         }
 
         return nil
 }
 
-func (nn *NeuralNet) backpropagate(x, y, wHidden, bHidden, wOut, bOut, output *mat.Dense) error {
+func (nn *NeuralNet) backpropagate(x, y, WHidden, BHidden, WOut, BOut, output *mat.Dense) error {
         hiddenLayerInput := new(mat.Dense)
-        hiddenLayerInput.Mul(x, wHidden)
-        addBHidden := func(_, col int, v float64) float64 { return v + bHidden.At(0, col) }
+        hiddenLayerInput.Mul(x, WHidden)
+        addBHidden := func(_, col int, v float64) float64 { return v + BHidden.At(0, col) }
         hiddenLayerInput.Apply(addBHidden, hiddenLayerInput)
 
         hiddenLayerActivations := new(mat.Dense)
+
         applySigmoid := func(_, _ int, v float64) float64 { return sigmoid(v) }
+
         hiddenLayerActivations.Apply(applySigmoid, hiddenLayerInput)
 
         outputLayerInput := new(mat.Dense)
-        outputLayerInput.Mul(hiddenLayerActivations, wOut)
-        addBOut := func(_, col int, v float64) float64 { return v + bOut.At(0, col) }
+        outputLayerInput.Mul(hiddenLayerActivations, WOut)
+        addBOut := func(_, col int, v float64) float64 { return v + BOut.At(0, col) }
         outputLayerInput.Apply(addBOut, outputLayerInput)
         output.Apply(applySigmoid, outputLayerInput)
 
@@ -83,53 +85,53 @@ func (nn *NeuralNet) backpropagate(x, y, wHidden, bHidden, wOut, bOut, output *m
         dOutput := new(mat.Dense)
         dOutput.MulElem(networkError, slopeOutputLayer)
         errorAtHiddenLayer := new(mat.Dense)
-        errorAtHiddenLayer.Mul(dOutput, wOut.T())
+        errorAtHiddenLayer.Mul(dOutput, WOut.T())
 
         dHiddenLayer := new(mat.Dense)
         dHiddenLayer.MulElem(errorAtHiddenLayer, slopeHiddenLayer)
 
 
-        wOutAdj := new(mat.Dense)
-        wOutAdj.Mul(hiddenLayerActivations.T(), dOutput)
-        wOutAdj.Scale(nn.config.LearningRate, wOutAdj)
-        wOut.Add(wOut, wOutAdj)
+        WOutAdj := new(mat.Dense)
+        WOutAdj.Mul(hiddenLayerActivations.T(), dOutput)
+        WOutAdj.Scale(nn.Config.LearningRate, WOutAdj)
+        WOut.Add(WOut, WOutAdj)
 
-        bOutAdj, err := sumAlongAxis(0, dOutput)
+        BOutAdj, err := sumAlongAxis(0, dOutput)
         if err != nil {
                 return err
         }
-        bOutAdj.Scale(nn.config.LearningRate, bOutAdj)
+        BOutAdj.Scale(nn.Config.LearningRate, BOutAdj)
 
-        bOut.Add(bOut, bOutAdj)
+        BOut.Add(BOut, BOutAdj)
 
-        wHiddenAdj := new(mat.Dense)
-        wHiddenAdj.Mul(x.T(), dHiddenLayer)
-        wHiddenAdj.Scale(nn.config.LearningRate, wHiddenAdj)
+        WHiddenAdj := new(mat.Dense)
+        WHiddenAdj.Mul(x.T(), dHiddenLayer)
+        WHiddenAdj.Scale(nn.Config.LearningRate, WHiddenAdj)
 
-        wHidden.Add(wHidden, wHiddenAdj)
+        WHidden.Add(WHidden, WHiddenAdj)
 
-        bHiddenAdj, err := sumAlongAxis(0, dHiddenLayer)
+        BHiddenAdj, err := sumAlongAxis(0, dHiddenLayer)
         if err != nil {
                 return err
         }
-        bHiddenAdj.Scale(nn.config.LearningRate, bHiddenAdj)
-        bHidden.Add(bHidden, bHiddenAdj)
+        BHiddenAdj.Scale(nn.Config.LearningRate, BHiddenAdj)
+        BHidden.Add(BHidden, BHiddenAdj)
         return nil
 }
 
 func (nn *NeuralNet) Predict(x *mat.Dense) (*mat.Dense, error) {
-	if nn.wHidden == nil || nn.wOut == nil {
+	if nn.WHidden == nil || nn.WOut == nil {
 		return nil, fmt.Errorf("the supplied weights are empty")
 	}
-	if nn.bHidden == nil || nn.bOut == nil {
+	if nn.BHidden == nil || nn.BOut == nil {
 		return nil, fmt.Errorf("the supplied biases are empty")
 	}
 
 	output := new(mat.Dense)
 
 	hiddenLayerInput := new(mat.Dense)
-	hiddenLayerInput.Mul(x, nn.wHidden)
-	addBHidden := func(_, col int, v float64) float64 { return v + nn.bHidden.At(0, col) }
+	hiddenLayerInput.Mul(x, nn.WHidden)
+	addBHidden := func(_, col int, v float64) float64 { return v + nn.BHidden.At(0, col) }
 	hiddenLayerInput.Apply(addBHidden, hiddenLayerInput)
 
 	hiddenLayerActivations := new(mat.Dense)
@@ -137,12 +139,13 @@ func (nn *NeuralNet) Predict(x *mat.Dense) (*mat.Dense, error) {
 	hiddenLayerActivations.Apply(applySigmoid, hiddenLayerInput)
 
 	outputLayerInput := new(mat.Dense)
-	outputLayerInput.Mul(hiddenLayerActivations, nn.wOut)
+	outputLayerInput.Mul(hiddenLayerActivations, nn.WOut)
 
-	addBOut := func(_, col int, v float64) float64 { return v + nn.bOut.At(0, col) }
+	addBOut := func(_, col int, v float64) float64 { return v + nn.BOut.At(0, col) }
 	outputLayerInput.Apply(addBOut, outputLayerInput)
 	output.Apply(applySigmoid, outputLayerInput)
 
+	addGaussianNoise(output, 0.01)
 	return output, nil
 }
 
