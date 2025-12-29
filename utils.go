@@ -2,9 +2,21 @@ package egnn
 import (
 	"gonum.org/v1/gonum/mat"
 	"gonum.org/v1/gonum/floats"
+	"math/rand"
 	"math"
 	"fmt"
+	"encoding/gob"
+	"bytes"
 )
+
+func addGaussianNoise(x *mat.Dense, std float64) {
+	r, c := x.Dims()
+	for i := 0; i < r; i++ {
+		for j := 0; j < c; j++ {
+			x.Set(i, j, x.At(i, j)+rand.NormFloat64()*std)
+		}
+	}
+}
 
 func sigmoid(x float64) float64 {
 	return 1.0 / (1.0 + math.Exp(-x))
@@ -12,6 +24,11 @@ func sigmoid(x float64) float64 {
 
 func sigmoidPrime(x float64) float64 {
 	return sigmoid(x) * (1.0 - sigmoid(x))
+}
+
+func noisySigmoid(x float64, noiseStd float64) float64 {
+    noise := rand.NormFloat64() * noiseStd
+    return sigmoid(x + noise)
 }
 
 func sumAlongAxis(axis int, m *mat.Dense) (*mat.Dense, error) {
@@ -41,4 +58,26 @@ func sumAlongAxis(axis int, m *mat.Dense) (*mat.Dense, error) {
 	}
 
 	return output, nil
+}
+
+func (nn *NeuralNet) DumpNet() ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := gob.NewEncoder(&buffer)
+	err := encoder.Encode(nn)
+	if err != nil {
+		return []byte{}, err
+	}
+	return buffer.Bytes(), nil
+}
+
+func LoadNet(b []byte) (*NeuralNet, error) {
+	buffer := bytes.NewBuffer(b)
+	decoder := gob.NewDecoder(buffer)
+
+	var net NeuralNet
+	err := decoder.Decode(&net)
+	if err != nil {
+		return nil, err
+	}
+	return &net, nil
 }
